@@ -77,7 +77,7 @@ fn run_experiment(chunk_sizes: &[usize], direct_io: bool, sync: bool, duration: 
 
 fn rocks_db_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     let chunk_sizes = vec![4*1024, 8*1024, 16*1024, 32*1024, 64*1024, 512*1024, 1024*1024];
-    let duration = Duration::from_secs(300); // 1 minute per experiment
+    let duration = Duration::from_secs(60); // 1 minute per experiment
 
     let mut csv_file = OpenOptions::new()
         .write(true)
