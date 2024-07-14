@@ -13,4 +13,4 @@ The benchmark results are visualized in the following graph:
 
 ![RocksDB Performance Graph](rocks_perf.png)
 
-This graph shows the write throughput for different chunk sizes across various configurations of direct I/O and sync writes.
+This graph shows the write throughput for different chunk sizes across different configurations of direct I/O and sync writes.
