@@ -1,6 +1,5 @@
 use rocksdb::{Options, WriteOptions, DB};
-use std::fs::{File, OpenOptions};
-use std::io::{BufReader, Read};
+use std::fs::OpenOptions;
 use std::time::{Instant, Duration};
 use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
@@ -13,16 +12,20 @@ fn generate_random_key() -> Vec<u8> {
         .collect()
 }
 
-fn benchmark_chunk_size(db: &DB, file_contents: &[u8], chunk_size: usize, write_options: &WriteOptions) -> (f64, f64, Duration, Duration, Duration) {
+fn generate_random_chunk(size: usize) -> Vec<u8> {
+    (0..size).map(|_| thread_rng().gen::<u8>()).collect()
+}
+
+fn benchmark_chunk_size(db: &DB, chunk: &[u8], write_options: &WriteOptions, duration: Duration) -> (f64, f64, Duration, Duration, Duration) {
     let mut latencies = Vec::new();
     let total_start = Instant::now();
     let mut total_bytes_written = 0;
     let mut total_writes = 0;
 
-    for chunk in file_contents.chunks(chunk_size) {
+    while total_start.elapsed() < duration {
         let key = generate_random_key();
         let start = Instant::now();
-        db.put_opt(&key, chunk, &write_options).unwrap();
+        db.put_opt(&key, chunk, write_options).unwrap();
         let duration = start.elapsed();
         latencies.push(duration);
         total_bytes_written += chunk.len();
@@ -41,7 +44,7 @@ fn benchmark_chunk_size(db: &DB, file_contents: &[u8], chunk_size: usize, write_
     (throughput_mib, writes_per_second, p50, p90, p99)
 }
 
-fn run_experiment(chunk_sizes: &[usize], file_contents: &[u8], direct_io: bool, sync: bool) -> Vec<(usize, f64, f64, u128, u128, u128)> {
+fn run_experiment(chunk_sizes: &[usize], direct_io: bool, sync: bool, duration: Duration) -> Vec<(usize, f64, f64, u128, u128, u128)> {
     let path = "db/";
     let mut results = Vec::new();
 
@@ -55,7 +58,8 @@ fn run_experiment(chunk_sizes: &[usize], file_contents: &[u8], direct_io: bool, 
         options.set_use_direct_io_for_flush_and_compaction(direct_io);
         let db = DB::open(&options, path).unwrap();
 
-        let (throughput, wps, p50, p90, p99) = benchmark_chunk_size(&db, file_contents, chunk_size, &write_options);
+        let chunk = generate_random_chunk(chunk_size);
+        let (throughput, wps, p50, p90, p99) = benchmark_chunk_size(&db, &chunk, &write_options, duration);
         
         results.push((chunk_size, throughput, wps, p50.as_micros(), p90.as_micros(), p99.as_micros()));
 
@@ -73,11 +77,7 @@ fn run_experiment(chunk_sizes: &[usize], file_contents: &[u8], direct_io: bool, 
 
 fn rocks_db_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     let chunk_sizes = vec![4*1024, 8*1024, 16*1024, 32*1024, 64*1024, 512*1024, 1024*1024];
-    
-    let file = File::open("25GiB_aa.txt")?;
-    let mut reader = BufReader::new(file);
-    let mut file_contents = Vec::new();
-    reader.read_to_end(&mut file_contents)?;
+    let duration = Duration::from_secs(300); // 1 minute per experiment
 
     let mut csv_file = OpenOptions::new()
         .write(true)
@@ -87,9 +87,9 @@ fn rocks_db_benchmark() -> Result<(), Box<dyn std::error::Error>> {
 
     writeln!(csv_file, "Direct I/O,Sync,Chunk Size (bytes),Throughput (MiB/s),Writes per Second,p50 Latency (µs),p90 Latency (µs),p99 Latency (µs)")?;
 
-    for direct_io in [false, true] {
+    for direct_io in [true, false] {
         for sync in [false, true] {
-            let results = run_experiment(&chunk_sizes, &file_contents, direct_io, sync);
+            let results = run_experiment(&chunk_sizes, direct_io, sync, duration);
             
             for (chunk_size, throughput, wps, p50, p90, p99) in results {
                 writeln!(csv_file, "{},{},{},{:.2},{:.2},{},{},{}",
